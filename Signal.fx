@@ -4,7 +4,7 @@
 uniform int MaskPattern <
 	ui_min = 0; ui_max = 2;
 	ui_label = "Masking Pattern";
-> = int(1);
+> = int(0);
 
 // CA vars
 uniform bool CaEnabled <
