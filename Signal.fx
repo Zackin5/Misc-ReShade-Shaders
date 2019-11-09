@@ -1,6 +1,11 @@
 
 #include "ReShadeUI.fxh"
 
+uniform int MaskPattern <
+	ui_min = 0; ui_max = 2;
+	ui_label = "Masking Pattern";
+> = int(1);
+
 // CA vars
 uniform bool CaEnabled <
 	ui_label = "Enabled";
@@ -18,6 +23,12 @@ uniform float CaStrength < __UNIFORM_SLIDER_FLOAT1
 	ui_min = 0.0; ui_max = 1.0;
 	ui_category = "Chromatic Abberation";
 > = 0.5;
+
+uniform bool CaMask <
+	ui_label = "Mask";
+	ui_tooltip = "Enable abberation scaling from mask";
+	ui_category = "Chromatic Abberation";
+> = true;
 
 uniform float CaCurve < __UNIFORM_SLIDER_FLOAT1
 	ui_label = "Aberration curve";
@@ -116,12 +127,38 @@ float2 GetRadialCoord(float2 texcoord : TexCoord){
 	return RadialCoord;
 }
 
-float GetMask(float2 RadialCoord, float curve, float2 texcoord : TexCoord){
-	// Grab Aspect Ratio
-	float Aspect = ReShade::AspectRatio;
+float GetMask(float curve, float2 texcoord : TexCoord){
+	if(MaskPattern == 0)
+	{
+		// Radial mask
+		float2 RadialCoord = GetRadialCoord(texcoord);
+		
+		// Grab Aspect Ratio
+		float Aspect = ReShade::AspectRatio;
 
-	// Generate radial mask from center (0) to the corner of the screen (1)
-	return pow(2.0 * length(RadialCoord) * rsqrt(Aspect * Aspect + 1.0), curve);
+		// Generate radial mask from center (0) to the corner of the screen (1)
+		return pow(2.0 * length(RadialCoord) * rsqrt(Aspect * Aspect + 1.0), curve);
+	}
+	else if(MaskPattern == 1)
+	{
+		// Vertical gradiant
+		float2 RadialCoord = GetRadialCoord(texcoord);
+		
+		// Grab Aspect Ratio
+		float Aspect = ReShade::AspectRatio;
+
+		return pow(2.0 * length(RadialCoord.y) * rsqrt(Aspect * Aspect + 1.0), curve);
+	}
+	else
+	{
+		// Horz gradiant
+		float2 RadialCoord = GetRadialCoord(texcoord);
+		
+		// Grab Aspect Ratio
+		float Aspect = ReShade::AspectRatio;
+
+		return pow(2.0 * length(RadialCoord.x) * rsqrt(Aspect * Aspect + 1.0), curve);
+	}
 }
 
 // Mixmaster CA effect from Prism.fx and ChromaticAberration.fx
@@ -130,15 +167,20 @@ float3 ChromaticAberrationPass(float4 vpos : SV_Position, float2 texcoord : TexC
 	if(!CaEnabled)
 		return tex2D(ReShade::BackBuffer, texcoord).rgb;
 		
-	float2 RadialCoord = GetRadialCoord(texcoord);
-	float Mask = GetMask(RadialCoord, CaCurve, texcoord);
+	float2 Mask = float2(1,0);
+
+	if(CaMask)
+	{
+		float2 RadialCoord = GetRadialCoord(texcoord);
+		Mask = GetMask(CaCurve, texcoord) * RadialCoord;
+	}
 
 	float3 color, colorInput = tex2D(ReShade::BackBuffer, texcoord).rgb;
 
 	// Sample the color components
-	color.r = tex2D(ReShade::BackBuffer, texcoord - (ReShade::PixelSize * RadialCoord * Mask * CaShiftRgb.r)).r;
-	color.g = tex2D(ReShade::BackBuffer, texcoord - (ReShade::PixelSize * RadialCoord * Mask * CaShiftRgb.g)).g;
-	color.b = tex2D(ReShade::BackBuffer, texcoord - (ReShade::PixelSize * RadialCoord * Mask * CaShiftRgb.b)).b;
+	color.r = tex2D(ReShade::BackBuffer, texcoord - (ReShade::PixelSize * Mask * CaShiftRgb.r)).r;
+	color.g = tex2D(ReShade::BackBuffer, texcoord - (ReShade::PixelSize * Mask * CaShiftRgb.g)).g;
+	color.b = tex2D(ReShade::BackBuffer, texcoord - (ReShade::PixelSize * Mask * CaShiftRgb.b)).b;
 
 	// Adjust the strength of the effect
 	return lerp(colorInput, color, CaStrength);
@@ -159,8 +201,7 @@ float2 GetSignalOffset(float channelOffset, int offsetIndex, float2 texcoord : T
 
 	// Apply signal mask if enabled
 	if(SigMaskShimmer){
-		float2 RadialCoord = GetRadialCoord(texcoord);
-		float Mask = GetMask(RadialCoord, SigMaskCurve, texcoord);
+		float Mask = GetMask(SigMaskCurve, texcoord);
 
 		xOffset *= Mask;
 	}
@@ -194,8 +235,7 @@ float3 SignalPass(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Ta
 	float cutoffScale = SigCutoff;
 
 	if(SigMaskCutoff){
-		float2 RadialCoord = GetRadialCoord(texcoord);
-		float Mask = GetMask(RadialCoord, SigMaskCurve, texcoord);
+		float Mask = GetMask(SigMaskCurve, texcoord);
 
 		cutoffScale -= Mask;
 	}
