@@ -51,7 +51,7 @@ uniform float3 SigXShiftRgb < __UNIFORM_SLIDER_FLOAT3
 
 uniform int3 SigOffsetRgb < __UNIFORM_SLIDER_FLOAT3
 	ui_min = 0; ui_max = 64;
-	ui_tooltip = "Distortion signal offset for each colour channel (RGB)";
+	ui_tooltip = "Distortion signal timing offset for each colour channel (RGB)";
 	ui_category = "Signal";
 > = int3(0, 24, 48);
 
@@ -80,11 +80,17 @@ uniform bool SigYRandomOffset <
 	ui_category = "Signal";
 > = true;
 
-uniform bool SigMask <
-	ui_label = "Mask";
-	ui_tooltip = "Enable radious mask of effect from center of screen";
+uniform bool SigMaskShimmer <
+	ui_label = "Shimmer Mask";
+	ui_tooltip = "Enables shimmer effect being scaled from center of screen";
 	ui_category = "Signal";
-> = true;
+> = false;
+
+uniform bool SigMaskCutoff <
+	ui_label = "Cutoff Mask";
+	ui_tooltip = "Enables signal cutoff value scaling from center of screen";
+	ui_category = "Signal";
+> = false;
 
 uniform float SigMaskCurve < __UNIFORM_SLIDER_FLOAT1
 	ui_label = "Mask curve";
@@ -152,7 +158,7 @@ float2 GetSignalOffset(float channelOffset, int offsetIndex, float2 texcoord : T
 	float xOffset = ReShade::PixelSize.x * rOffset * channelOffset;
 
 	// Apply signal mask if enabled
-	if(SigMask){
+	if(SigMaskShimmer){
 		float2 RadialCoord = GetRadialCoord(texcoord);
 		float Mask = GetMask(RadialCoord, SigMaskCurve, texcoord);
 
@@ -164,10 +170,10 @@ float2 GetSignalOffset(float channelOffset, int offsetIndex, float2 texcoord : T
 
 float3 SignalPass(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Target
 {
-	float3 color, colorInput = tex2D(ReShade::BackBuffer, texcoord).rgb;
-
 	if(!SigEnabled)
-		return color;
+		return tex2D(ReShade::BackBuffer, texcoord).rgb;
+
+	float3 color, colorInput = tex2D(ReShade::BackBuffer, texcoord).rgb;
 
 	// Calulate offset array indexes for getting "random" pixel offsets
 	int yPixel = (texcoord.y / SigYScale) * ReShade::ScreenSize.y;
@@ -185,11 +191,20 @@ float3 SignalPass(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Ta
 	color.b = tex2D(ReShade::BackBuffer, GetSignalOffset(SigXShiftRgb.b, offsetBindex, texcoord)).b;
 
 	// Apply signal cutoffs
-	if(SigCutoff > color.r)
+	float cutoffScale = SigCutoff;
+
+	if(SigMaskCutoff){
+		float2 RadialCoord = GetRadialCoord(texcoord);
+		float Mask = GetMask(RadialCoord, SigMaskCurve, texcoord);
+
+		cutoffScale -= Mask;
+	}
+
+	if(cutoffScale > color.r)
 		color.r = colorInput.r;
-	if(SigCutoff > color.g)
+	if(cutoffScale > color.g)
 		color.g = colorInput.g;
-	if(SigCutoff > color.b)
+	if(cutoffScale > color.b)
 		color.b = colorInput.b;
 
 	// Adjust the strength of the effect
