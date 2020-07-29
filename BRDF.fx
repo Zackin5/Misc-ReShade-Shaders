@@ -31,6 +31,13 @@ uniform bool display_spec <
 	ui_label = "DEBUG Display Specular";
 > = false;
 
+texture2D ReflectionTex 	{ Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT; Format = RGBA8; AddressU = MIRROR;};
+sampler2D ReflectionBuffer	{ Texture = ReflectionTex;	};
+
+///////////////
+// Functions //
+///////////////
+
 float GetDepth(float2 texcoord)
 {
     return ReShade::GetLinearizedDepth(texcoord);
@@ -121,16 +128,13 @@ float3 EnvironmentBRDF( float g, float vdotN, float3 color )
 	return saturate( a0 + color * ( a1 - a0 ) );
 }
 
-float4 brdf_pass(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Target
+////////////
+// Passes //
+////////////
+
+float4 PS_reflection(float2 texcoord : TexCoord) : SV_TARGET
 {
     float3 color = tex2D(ReShade::BackBuffer, texcoord).rgb;
-    float3 normal = NormalVector(texcoord);
-    float vdotN = normal.z;
-
-    float F0 = specular / 25.0f + 0.04f;
-    float3 F = fresnelSchlickRoughness(vdotN, F0, roughness);
-    float2 brdf = EnvironmentBRDF(roughness, vdotN);
-
     float3 specColor;
 
     if(colorSource == 1)
@@ -142,6 +146,19 @@ float4 brdf_pass(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Tar
     else
         specColor = ambColor;
 
+    return float4(specColor, 1);
+}
+
+float4 PS_brdf(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Target
+{
+    float3 specColor = tex2D(ReflectionBuffer, texcoord).rgb;
+    float3 normal = NormalVector(texcoord);
+    float vdotN = normal.z;
+
+    float F0 = specular / 25.0f + 0.04f;
+    float3 F = fresnelSchlickRoughness(vdotN, F0, roughness);
+    float2 brdf = EnvironmentBRDF(roughness, vdotN);
+
     float3 spec = brdf.x + specColor * (F * (brdf.y - brdf.x));
 
     if(display_spec)
@@ -152,9 +169,15 @@ float4 brdf_pass(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Tar
 
 technique BRDF
 {
+	pass Reflection
+	{
+		VertexShader=PostProcessVS;
+		PixelShader=PS_reflection;
+		RenderTarget = ReflectionTex;
+	}
 	pass BRDF
 	{
 		VertexShader=PostProcessVS;
-		PixelShader=brdf_pass;
+		PixelShader=PS_brdf;
 	}
 }
