@@ -151,6 +151,7 @@ float4 PS_reflection(float2 texcoord : TexCoord) : SV_TARGET
 
 float4 PS_brdf(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Target
 {
+    float3 color = tex2D(ReShade::BackBuffer, texcoord).rgb;
     float3 specColor = tex2D(ReflectionBuffer, texcoord).rgb;
     float3 normal = NormalVector(texcoord);
     float vdotN = normal.z;
@@ -159,6 +160,7 @@ float4 PS_brdf(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Targe
     float3 F = fresnelSchlickRoughness(vdotN, F0, roughness);
     float2 brdf = EnvironmentBRDF(roughness, vdotN);
 
+    // TODO: pretty sure this is erranious, eg brdf.x is a constant color
     float3 spec = brdf.x + specColor * (F * (brdf.y - brdf.x));
 
     if(display_spec)
