@@ -160,8 +160,7 @@ float4 PS_brdf(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Targe
     float3 F = fresnelSchlickRoughness(vdotN, F0, roughness);
     float2 brdf = EnvironmentBRDF(roughness, vdotN);
 
-    // TODO: pretty sure this is erranious, eg brdf.x is a constant color
-    float3 spec = brdf.x + specColor * (F * (brdf.y - brdf.x));
+    float3 spec = (brdf.x * specColor) + specColor * (F * (brdf.y - brdf.x));
 
     if(display_spec)
         return float4(spec, 1.0);
