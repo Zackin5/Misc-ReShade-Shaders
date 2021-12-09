@@ -30,6 +30,18 @@ uniform bool CaMask <
 	ui_category = "Chromatic Abberation";
 > = true;
 
+uniform bool CaEdgeDetect <
+	ui_label = "Edge Detection Filter";
+	ui_tooltip = "Enable edge detect scaling";
+	ui_category = "Chromatic Abberation";
+> = true;
+
+uniform bool CaEdgeDetectInvert <
+	ui_label = "Invert Edge Detection";
+	ui_tooltip = "Invert edge detection";
+	ui_category = "Chromatic Abberation";
+> = false;
+
 uniform float CaCurve < __UNIFORM_SLIDER_FLOAT1
 	ui_label = "Aberration curve";
 	ui_min = 0.0; ui_max = 4.0; ui_step = 0.01;
@@ -127,6 +139,48 @@ float2 GetRadialCoord(float2 texcoord : TexCoord){
 	return RadialCoord;
 }
 
+float EdgeDetectSample(int offset, float2 texcoord : TexCoord){
+	float3 color = tex2D(ReShade::BackBuffer, texcoord).rgb;
+
+	return ((color.r + color.g + color.b) / 3.0f) + (offset * ReShade::PixelSize);
+}
+
+float4 GetPixelValue(float2 texcoord : TexCoord) {
+	float3 color = tex2D(ReShade::BackBuffer, texcoord).rgb;
+
+	return ((color.r + color.g + color.b) / 3.0f);
+}
+
+void make_kernel(inout float n[9], float2 texcoord : TexCoord){
+	float w = ReShade::PixelSize.x;
+	float h = ReShade::PixelSize.y;
+
+	n[0] = tex2D(ReShade::BackBuffer, texcoord + float2( -w, -h));
+	n[1] = tex2D(ReShade::BackBuffer, texcoord + float2(0.0, -h));
+	n[2] = tex2D(ReShade::BackBuffer, texcoord + float2(  w, -h));
+	n[3] = tex2D(ReShade::BackBuffer, texcoord + float2( -w, 0.0));
+	n[4] = tex2D(ReShade::BackBuffer, texcoord);
+	n[5] = tex2D(ReShade::BackBuffer, texcoord + float2(  w, 0.0));
+	n[6] = tex2D(ReShade::BackBuffer, texcoord + float2( -w, h));
+	n[7] = tex2D(ReShade::BackBuffer, texcoord + float2(0.0, h));
+	n[8] = tex2D(ReShade::BackBuffer, texcoord + float2(  w, h));
+}
+
+// Sobel implementation by Patrick Hebron
+// via https://gist.github.com/Hebali/6ebfc66106459aacee6a9fac029d0115
+float EdgeDetect(float2 texcoord : TexCoord){
+	float n[9];
+	make_kernel(n, texcoord);
+
+	float sobel_edge_h = n[2] + (2.0*n[5]) + n[8] - (n[0] + (2.0*n[3]) + n[6]);
+	float sobel_edge_v = n[0] + (2.0*n[1]) + n[2] - (n[6] + (2.0*n[7]) + n[8]);
+	float sobel = sqrt((sobel_edge_h * sobel_edge_h) + (sobel_edge_v * sobel_edge_v));
+
+	if(CaEdgeDetectInvert)
+		return 1.0 - sobel;
+	return sobel;
+}
+
 float GetMask(float curve, float2 texcoord : TexCoord){
 	if(MaskPattern == 0)
 	{
@@ -173,6 +227,10 @@ float3 ChromaticAberrationPass(float4 vpos : SV_Position, float2 texcoord : TexC
 	{
 		float2 RadialCoord = GetRadialCoord(texcoord);
 		Mask = GetMask(CaCurve, texcoord) * RadialCoord;
+	}
+
+	if(CaEdgeDetect){
+		Mask *= EdgeDetect(texcoord);
 	}
 
 	float3 color, colorInput = tex2D(ReShade::BackBuffer, texcoord).rgb;
