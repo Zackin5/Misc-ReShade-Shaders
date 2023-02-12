@@ -20,82 +20,100 @@
 
 // -- config  -- //
 uniform float hardScan <
-	ui_label = "hardScan";
+	ui_label = "Scanline Hardness";
 	ui_min = -20.0; ui_max = 0.0; ui_step = 1.0;
 	ui_type = "slider";
+	ui_category = "Image";
 > = -8.0;
 
 uniform float hardPix <
-	ui_label = "hardPix";
+	ui_label = "Pixel Hardness";
 	ui_min = -20.0; ui_max = 0.0; ui_step = 1.0;
 	ui_type = "slider";
+	ui_category = "Image";
 > = -3.0;
 
+uniform float shadowMask <
+	ui_label = "Mask Type";
+	ui_min = 0.0; ui_max = 4.0; ui_step = 1.0;
+	ui_type = "slider";
+	ui_category = "Shadow Mask";
+> = 3.0;
+
+uniform bool maskRotate <
+	ui_label = "Rotate Mask";
+	ui_category = "Shadow Mask";
+> = false;
+
+uniform float maskDark <
+	ui_label = "Dark Level";
+	ui_min = 0.0; ui_max = 2.0; ui_step = 0.1;
+	ui_type = "slider";
+	ui_category = "Shadow Mask";
+> = 0.5;
+
+uniform float maskLight <
+	ui_label = "Light Level";
+	ui_min = 0.0; ui_max = 2.0; ui_step = 0.1;
+	ui_type = "slider";
+	ui_category = "Shadow Mask";
+> = 1.5;
+
+uniform bool DO_BLOOM <
+	ui_label = "Enable";
+	ui_category = "Bloom";
+> = true;
+
+uniform float bloomAmount <
+	ui_label = "Bloom Amount";
+	ui_min = 0.0; ui_max = 1.0; ui_step = 0.05;
+	ui_type = "slider";
+	ui_category = "Bloom";
+> = 0.15;
+
+uniform float shape <
+	ui_label = "Filter Kernel Shape";
+	ui_min = 0.0; ui_max = 10.0; ui_step = 0.05;
+	ui_type = "slider";
+	ui_category = "Bloom";
+> = 2.0;
+
+uniform float brightboost <
+	ui_label = "Brightness Boost";
+	ui_min = 0.0; ui_max = 2.0; ui_step = 0.05;
+	ui_type = "slider";
+	ui_category = "Bloom";
+> = 1.0;
+
+uniform float hardBloomPix <
+	ui_label = "Bloom Pixel Softness";
+	ui_min = -2.0; ui_max = -0.5; ui_step = 0.1;
+	ui_type = "slider";
+	ui_category = "Bloom";
+> = -1.5;
+
+uniform float hardBloomScan <
+	ui_label = "Bloom Scanline Softness";
+	ui_min = -4.0; ui_max = -1.0; ui_step = 0.1;
+	ui_type = "slider";
+	ui_category = "Bloom";
+> = -2.0;
+
 uniform float2 warp <
-	ui_label = "warp";
+	ui_label = "Screen Warp";
 	ui_min = 0.0; ui_max = 0.125; ui_step = 0.01;
 	ui_type = "slider";
 > = float2(0.031, 0.041);
 
-uniform float maskDark <
-	ui_label = "maskDark";
-	ui_min = 0.0; ui_max = 2.0; ui_step = 0.1;
-	ui_type = "slider";
-> = 0.5;
-
-uniform float maskLight <
-	ui_label = "maskLight";
-	ui_min = 0.0; ui_max = 2.0; ui_step = 0.1;
-	ui_type = "slider";
-> = 1.5;
-
 uniform bool scaleInLinearGamma <
-	ui_label = "scaleInLinearGamma";
+	ui_label = "Scale in Linear Gamma";
+	ui_category = "Final Output";
 > = true;
 
 uniform bool simpleLinearGamma <
-	ui_label = "simpleLinearGamma";
+	ui_label = "Use Simple Linear Gamma";
+	ui_category = "Final Output";
 > = false;
-
-uniform float shadowMask <
-	ui_label = "shadowMask";
-	ui_min = 0.0; ui_max = 4.0; ui_step = 1.0;
-	ui_type = "slider";
-> = 3.0;
-
-uniform float brightboost <
-	ui_label = "brightness";
-	ui_min = 0.0; ui_max = 2.0; ui_step = 0.05;
-	ui_type = "slider";
-> = 1.0;
-
-uniform float hardBloomPix <
-	ui_label = "bloom-x soft";
-	ui_min = -2.0; ui_max = -0.5; ui_step = 0.1;
-	ui_type = "slider";
-> = -1.5;
-
-uniform float hardBloomScan <
-	ui_label = "bloom-y soft";
-	ui_min = -4.0; ui_max = -1.0; ui_step = 0.1;
-	ui_type = "slider";
-> = -2.0;
-
-uniform float bloomAmount <
-	ui_label = "bloom amt";
-	ui_min = 0.0; ui_max = 1.0; ui_step = 0.05;
-	ui_type = "slider";
-> = 0.15;
-
-uniform float shape <
-	ui_label = "filter kernel shape";
-	ui_min = 0.0; ui_max = 10.0; ui_step = 0.05;
-	ui_type = "slider";
-> = 2.0;
-
-uniform bool DO_BLOOM <
-	ui_label = "use bloom";
-> = true;
 
 /* COMPATIBILITY
    - HLSL compilers
@@ -246,47 +264,53 @@ float2 Warp(float2 pos){
 float3 Mask(float2 pos){
   float3 mask=float3(maskDark,maskDark,maskDark);
 
+  float2 mask_pos;
+  if (maskRotate)
+    mask_pos = float2(pos.y, pos.x);
+  else
+    mask_pos = pos;
+
   // Very compressed TV style shadow mask.
   if (shadowMask == 1) {
     float mask_line = maskLight;
     float odd=0.0;
-    if(frac(pos.x/6.0)<0.5) odd = 1.0;
-    if(frac((pos.y+odd)/2.0)<0.5) mask_line = maskDark;  
-    pos.x=frac(pos.x/3.0);
+    if(frac(mask_pos.x/6.0)<0.5) odd = 1.0;
+    if(frac((mask_pos.y+odd)/2.0)<0.5) mask_line = maskDark;  
+    mask_pos.x=frac(mask_pos.x/3.0);
    
-    if(pos.x<0.333)mask.r=maskLight;
-    else if(pos.x<0.666)mask.g=maskLight;
+    if(mask_pos.x<0.333)mask.r=maskLight;
+    else if(mask_pos.x<0.666)mask.g=maskLight;
     else mask.b=maskLight;
     mask *= mask_line;  
   } 
 
   // Aperture-grille.
   else if (shadowMask == 2) {
-    pos.x=frac(pos.x/3.0);
+    mask_pos.x=frac(mask_pos.x/3.0);
 
-    if(pos.x<0.333)mask.r=maskLight;
-    else if(pos.x<0.666)mask.g=maskLight;
+    if(mask_pos.x<0.333)mask.r=maskLight;
+    else if(mask_pos.x<0.666)mask.g=maskLight;
     else mask.b=maskLight;
   } 
 
   // Stretched VGA style shadow mask (same as prior shaders).
   else if (shadowMask == 3) {
-    pos.x+=pos.y*3.0;
-    pos.x=frac(pos.x/6.0);
+    mask_pos.x+=mask_pos.y*3.0;
+    mask_pos.x=frac(mask_pos.x/6.0);
 
-    if(pos.x<0.333)mask.r=maskLight;
-    else if(pos.x<0.666)mask.g=maskLight;
+    if(mask_pos.x<0.333)mask.r=maskLight;
+    else if(mask_pos.x<0.666)mask.g=maskLight;
     else mask.b=maskLight;
   }
 
   // VGA style shadow mask.
   else if (shadowMask == 4) {
-    pos.xy=floor(pos.xy*float2(1.0,0.5));
-    pos.x+=pos.y*3.0;
-    pos.x=frac(pos.x/6.0);
+    mask_pos.xy=floor(mask_pos.xy*float2(1.0,0.5));
+    mask_pos.x+=mask_pos.y*3.0;
+    mask_pos.x=frac(mask_pos.x/6.0);
 
-    if(pos.x<0.333)mask.r=maskLight;
-    else if(pos.x<0.666)mask.g=maskLight;
+    if(mask_pos.x<0.333)mask.r=maskLight;
+    else if(mask_pos.x<0.666)mask.g=maskLight;
     else mask.b=maskLight;
   }
 
