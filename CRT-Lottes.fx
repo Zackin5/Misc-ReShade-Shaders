@@ -257,7 +257,7 @@ float3 Bloom(float2 pos, float2 texture_size){
 // Distortion of scanlines, and end of screen alpha.
 float2 Warp(float2 pos){
   pos=pos*2.0-1.0;    
-  pos*=float2(1.0+(pos.y*pos.y)*warp.x,1.0+(pos.x*pos.x)*warp.y);
+  pos*=float2(1.0+(pos.y*pos.y)*warp.x, saturate(1.0+(pos.x*pos.x)*warp.y));
   return pos*0.5+0.5;}
 
 // Shadow mask 
