@@ -13,6 +13,7 @@
 // Please take and use, change, or whatever.
 //
 // Ported to ReShade by Zackin5
+// Additional tweaks taken from RSRetroArch repo
 //
 
 #include "ReShade.fxh"
@@ -33,6 +34,13 @@ uniform float hardPix <
 	ui_category = "Image";
 > = -3.0;
 
+uniform float downsizeDevisor <
+	ui_label = "Downscale Devisor";
+	ui_min = 1; ui_max = 16.0; ui_step = 0.25;
+	ui_type = "slider";
+	ui_category = "Image";
+> = 2;
+
 uniform float shadowMask <
 	ui_label = "Mask Type";
 	ui_min = 0.0; ui_max = 4.0; ui_step = 1.0;
@@ -42,6 +50,11 @@ uniform float shadowMask <
 
 uniform bool maskRotate <
 	ui_label = "Rotate Mask";
+	ui_category = "Shadow Mask";
+> = false;
+
+uniform bool maskUseDownscale <
+	ui_label = "Use Downscale Res";
 	ui_category = "Shadow Mask";
 > = false;
 
@@ -110,54 +123,37 @@ uniform bool scaleInLinearGamma <
 	ui_category = "Final Output";
 > = true;
 
-uniform bool simpleLinearGamma <
-	ui_label = "Use Simple Linear Gamma";
-	ui_category = "Final Output";
-> = false;
-
-/* COMPATIBILITY
-   - HLSL compilers
-   - Cg   compilers
-   - FX11 compilers
-*/
-
 //------------------------------------------------------------------------
 
 // sRGB to Linear.
 // Assuing using sRGB typed textures this should not be needed.
 float ToLinear1(float c)
 {
-   return(c<=0.04045)?c/12.92:pow((c+0.055)/1.055,2.4);
+   return scaleInLinearGamma==0 ? c : (c<=0.04045)?c/12.92:pow((c+0.055)/1.055,2.4);
 }
 float3 ToLinear(float3 c)
 {
-   if (scaleInLinearGamma || simpleLinearGamma) return c;
-   return float3(ToLinear1(c.r),ToLinear1(c.g),ToLinear1(c.b));
+   return scaleInLinearGamma==0 ? c : float3(ToLinear1(c.r),ToLinear1(c.g),ToLinear1(c.b));
 }
 
 // Linear to sRGB.
 // Assuming using sRGB typed textures this should not be needed.
 float ToSrgb1(float c)
 {
-   return(c<0.0031308?c*12.92:1.055*pow(c,0.41666)-0.055);
+   return scaleInLinearGamma==0 ? c : (c<0.0031308?c*12.92:1.055*pow(c,0.41666)-0.055);
 }
 
 float3 ToSrgb(float3 c)
 {
-    if (simpleLinearGamma) return pow(c, 1.0 / 2.2);
-    if (scaleInLinearGamma) return c;
-    return float3(ToSrgb1(c.r),ToSrgb1(c.g),ToSrgb1(c.b));
+    return scaleInLinearGamma==0 ? c : float3(ToSrgb1(c.r),ToSrgb1(c.g),ToSrgb1(c.b));
 }
 
 // Nearest emulated sample given floating point position and texel offset.
 // Also zero's off screen.
 float3 Fetch(float2 pos, float2 off, float2 texture_size){
     pos=(floor(pos*texture_size.xy+off)+float2(0.5,0.5))/texture_size.xy;
-
-    if (simpleLinearGamma)
-        return ToLinear(brightboost * pow(tex2D(ReShade::BackBuffer,pos.xy).rgb, 2.2));
-    else
-        return ToLinear(brightboost * tex2D(ReShade::BackBuffer,pos.xy).rgb);
+    if(max(abs(pos.x-0.5),abs(pos.y-0.5))>0.5)return float3(0.0,0.0,0.0);
+    return ToLinear(brightboost * tex2D(ReShade::BackBuffer,pos.xy).rgb);
 }
 
 // Distance in emulated pixels to nearest texel.
@@ -231,22 +227,22 @@ float BloomScan(float2 pos,float off, float2 texture_size){
   return Gaus(dst+off,hardBloomScan);}
 
 // Allow nearest three lines to effect pixel.
-float3 Tri(float2 pos, float2 texture_size){
-  float3 a=Horz3(pos,-1.0, texture_size);
-  float3 b=Horz5(pos, 0.0, texture_size);
-  float3 c=Horz3(pos, 1.0, texture_size);
+float3 Tri(float2 posWarped, float2 pos, float2 texture_size){
+  float3 a=Horz3(posWarped,-1.0, texture_size);
+  float3 b=Horz5(posWarped, 0.0, texture_size);
+  float3 c=Horz3(posWarped, 1.0, texture_size);
   float wa=Scan(pos,-1.0, texture_size);
   float wb=Scan(pos, 0.0, texture_size);
   float wc=Scan(pos, 1.0, texture_size);
   return a*wa+b*wb+c*wc;}
   
 // Small bloom.
-float3 Bloom(float2 pos, float2 texture_size){
-  float3 a=Horz5(pos,-2.0, texture_size);
-  float3 b=Horz7(pos,-1.0, texture_size);
-  float3 c=Horz7(pos, 0.0, texture_size);
-  float3 d=Horz7(pos, 1.0, texture_size);
-  float3 e=Horz5(pos, 2.0, texture_size);
+float3 Bloom(float2 posWarped, float2 pos, float2 texture_size){
+  float3 a=Horz5(posWarped,-2.0, texture_size);
+  float3 b=Horz7(posWarped,-1.0, texture_size);
+  float3 c=Horz7(posWarped, 0.0, texture_size);
+  float3 d=Horz7(posWarped, 1.0, texture_size);
+  float3 e=Horz5(posWarped, 2.0, texture_size);
   float wa=BloomScan(pos,-2.0, texture_size);
   float wb=BloomScan(pos,-1.0, texture_size);
   float wc=BloomScan(pos, 0.0, texture_size);
@@ -319,15 +315,20 @@ float3 Mask(float2 pos){
 
 float4 crt_lottes(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Target
 {    
-    float2 pos = Warp(texcoord);
-    float3 outColor = Tri(pos, ReShade::ScreenSize);
+    float2 videoRes = ReShade::ScreenSize;
+    float2 downsizedRes = (videoRes / downsizeDevisor);
+    float2 pos = texcoord.xy*(downsizedRes/videoRes)*(videoRes/downsizedRes);
+    float2 posWarped = Warp(texcoord.xy*(downsizedRes/videoRes)*(videoRes/downsizedRes));
+    float3 outColor = Tri(posWarped, pos, downsizedRes);
 
     if(DO_BLOOM)
         //Add Bloom
-        outColor.rgb+=Bloom(pos, ReShade::ScreenSize)*bloomAmount;
+        outColor.rgb+=Bloom(posWarped, pos, downsizedRes)*bloomAmount;
 
-    if(shadowMask)
-        outColor.rgb*=Mask(floor(texcoord*ReShade::ScreenSize)+float2(0.5,0.5));
+    if(shadowMask) {
+        float2 maskRes = maskUseDownscale == 1 ? downsizedRes : videoRes;
+        outColor.rgb*=Mask(floor(texcoord*maskRes)+float2(0.5,0.5));
+	}
 
     return float4(ToSrgb(outColor.rgb),1.0);
 }
