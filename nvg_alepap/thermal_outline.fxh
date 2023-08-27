@@ -28,6 +28,13 @@ uniform int NOD_Thermal_EdgeDetectionMode <
 	ui_category = "Thermal";
 > = 1;
 
+uniform float Thermal_monochrome_threshold <
+	ui_label = "Color Edge Threshold";
+	ui_category = "Thermal";
+	ui_type = "slider";
+	ui_min = 0.00; ui_max = 10.00;
+> = 6.125f;
+
 uniform float Thermal_monochrome_contrast <
 	ui_label = "Color Edge Contrast";
 	ui_category = "Thermal";
@@ -56,11 +63,12 @@ float3 GetEdgeSample(float2 coord)
 	else
 	{
 		float3 color = tex2D(sNVG_Thermal, coord).rgb;
-		return pow(abs(color * 2 - 1), 1 / max(Thermal_monochrome_contrast, 0.0001)) * sign(color - 0.5) + 0.5; // Contrast
+		color = pow(abs(color * 2.0 - 1.0), 1.0 / max(Thermal_monochrome_contrast, 0.0001f)) * sign(color - 0.5) + 0.5; // Contrast
+		return normalize(color);
 	}
 }
 
-float ThermalOutline(float2 texcoord, float edgeDetectionAccuracy, float edgeSlope)
+float ThermalOutline(float2 texcoord, float edgeDetectionAccuracy)
 {
 	// Sobel operator matrices
 	const float3 Gx[3] =
@@ -97,8 +105,10 @@ float ThermalOutline(float2 texcoord, float edgeDetectionAccuracy, float edgeSlo
 	doty *= edgeDetectionAccuracy;
 
 	// Return custom color when weight over threshold
+	float edgeProduct = sqrt(dot(dotx, dotx) + dot(doty, doty));
+
 	if (NOD_THERMAL_DEBUG)
-		return sqrt(dot(dotx, dotx) + dot(doty, doty));
+		return saturate(edgeProduct);
 	else
-		return sqrt(dot(dotx, dotx) + dot(doty, doty)) >= edgeSlope;
+		return saturate(edgeProduct - Thermal_monochrome_threshold);
 }

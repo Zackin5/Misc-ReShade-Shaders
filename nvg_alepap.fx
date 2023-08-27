@@ -51,7 +51,7 @@ uniform float3 NOD_COLOR <
 	ui_type = "drag";
 	ui_label = "Phosphor Color";
 	ui_tooltip = "Color of the phosphor element.";
-> = float3(3.92f,1.00f,7.47f);
+> = float3(1.92f,1.00f,7.47f);
 
 uniform float NOD_GRAIN_INTENSITY <
 	ui_type = "slider";
@@ -70,6 +70,7 @@ uniform float NOD_THERMAL_RAD <
 	ui_min = 0.0; ui_max = 2.0;
 	ui_label = "Thermal Radius";
 	ui_tooltip = "Adjusts the size of the thermal display";
+	ui_category = "Thermal";
 > = 1.0;
 
 uniform float NOD_THERMAL_INTENSITY <
@@ -77,10 +78,19 @@ uniform float NOD_THERMAL_INTENSITY <
 	ui_min = 0.0; ui_max = 2.0;
 	ui_label = "Thermal Intensity";
 	ui_tooltip = "Intensity of the thermal display";
+	ui_category = "Thermal";
 > = 1.0;
 
+uniform float NOD_THERMAL_REFLECTOR <
+	ui_type = "slider";
+	ui_min = 0.0; ui_max = 1.0;
+	ui_label = "Thermal Reflector Glow";
+	ui_tooltip = "Intensity of the COTI reflector glow";
+	ui_category = "Thermal";
+> = 0.005;
+
 texture2D tNVG_Backup	{ Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT;};
-texture2D tNVG_Thermal	{ Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT;};
+texture2D tNVG_Thermal	{ Width = 640; Height = 480; Format=R8;};
 texture tNVG_Mask <source="nvg_alepap/NvgMask.png";> { Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT; Format=R8; };
 texture tNVG_Thermal_Mask <source="nvg_alepap/ThermalMask.png";> { Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT; Format=R8; };
 
@@ -106,7 +116,7 @@ float2 getZoomedCoord(float2 texcoord)
 	zoomCoord /= 1.0f + NOD_POS_Z; // Multiply by center
 	zoomCoord += 0.5f; // Recenter
 
-	return zoomCoord;
+	return saturate(zoomCoord);
 }
 
 float4 nvg_alepap_pass0_backup(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Target
@@ -125,14 +135,14 @@ float4 nvg_alepap_thermal_pass0(float4 vpos : SV_Position, float2 texcoord : Tex
 
 float4 nvg_alepap_thermal_pass1(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Target
 {
-	// Psudo thermal noise
+	// Psudo thermal smooth visuals
 	return Thermal_Denoise_KNN(texcoord, 0.15, 0.8, 0.03, 0.05, 50.0);
 }
 
 float4 nvg_alepap_thermal_pass2(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Target
 {
 	// Render outline
-	return ThermalOutline(texcoord, 1.1f, 6.125);
+	return ThermalOutline(texcoord, 1.1f);
 }
 
 float4 nvg_alepap_pass1(float4 vpos : SV_Position, float2 texcoord : TexCoord) : SV_Target
@@ -141,13 +151,14 @@ float4 nvg_alepap_pass1(float4 vpos : SV_Position, float2 texcoord : TexCoord) :
 	float4 color = tex2D(ReShade::BackBuffer, zoomCoord);
 	
 	float colorInfrared = ProcessBW(color, -0.4, 2.0, 3.0, 0.0, -0.6, -0.2, 4); // Infrared pass
-	colorInfrared = FilmGrain(colorInfrared, texcoord, 2, 0.0, 0.6 * NOD_GRAIN_INTENSITY); // Big grain pass
-	colorInfrared = FilmGrain(colorInfrared, texcoord, 1, 8.0, 0.4 * NOD_GRAIN_INTENSITY); // Small grain pass
+	colorInfrared = FilmGrain(colorInfrared, texcoord, 2, 0.0, 0.8 * NOD_GRAIN_INTENSITY); // Big grain pass
+	colorInfrared = FilmGrain(colorInfrared, texcoord, 1, 8.0, 0.6 * NOD_GRAIN_INTENSITY); // Small grain pass
 	
 	color = float4(colorInfrared, colorInfrared, colorInfrared, color.a);
+
 	// Join thermal
 	if (NOD_THERMAL){
-		float4 thermalCol = color + (tex2D(sNVG_Thermal, zoomCoord) * NOD_THERMAL_INTENSITY);
+		float4 thermalCol = color + (tex2D(sNVG_Thermal, zoomCoord) * NOD_THERMAL_INTENSITY) + NOD_THERMAL_REFLECTOR;
 		color.rgb = ApplyMask(color, thermalCol, sNVG_Thermal_Mask, texcoord, NOD_RAD * NOD_THERMAL_RAD, NOD_POS).rgb;
 	}
 	return saturate(color);
