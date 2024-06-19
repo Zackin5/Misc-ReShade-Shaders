@@ -30,6 +30,22 @@ uniform float vhs_output_gamma <
 	ui_tooltip = "Most monitors/images use a value of 2.2";
 > = 2.2;
 
+uniform float vhs_res_color_mult <
+	ui_type = "slider";
+	ui_min = 0.01; ui_max = 3.00;
+	ui_step = 0.05;
+	ui_label = "Image chroma resolution multiplier";
+	ui_tooltip = "Use 0.5x for longplay, or 0.25 for super longplay";
+> = 1.0;
+
+uniform float vhs_res_luma_mult <
+	ui_type = "slider";
+	ui_min = 0.01; ui_max = 3.00;
+	ui_step = 0.05;
+	ui_label = "Image luma resolution multiplier";
+	ui_tooltip = "Use 0.5x for longplay, or 0.25 for super longplay";
+> = 1.0;
+
 #define source_res float2(640, 480)
 #define color_res float2(40, 448)
 #define luma_res float2(333, 448)
@@ -134,9 +150,9 @@ float4 VHS_Dee_Liteyears_Color_Gaussian(float4 pos : SV_Position, float2 texcoor
 {
 	float2 pixel_coord = (texcoord * color_res);
 	float2 pixel_screen_coord = floor(texcoord * ReShade::ScreenSize);
-	float2 sample_width = floor(source_res / 2) / color_res;
+	float2 sample_width = floor(source_res / 4) / color_res;
 
-	return float4(sample_gaussian(texcoord, sample_width, color_res), 1.0);
+	return float4(sample_gaussian(texcoord, sample_width / vhs_res_color_mult, color_res), 1.0);
 }
 
 float VHS_Dee_Liteyears_Luma_Gaussian(float4 pos : SV_Position, float2 texcoord : TexCoord ) : COLOR
@@ -145,7 +161,7 @@ float VHS_Dee_Liteyears_Luma_Gaussian(float4 pos : SV_Position, float2 texcoord 
 	float2 pixel_screen_coord = floor(texcoord * ReShade::ScreenSize);
 	float2 sample_width = source_res / luma_res;
 
-	float3 color = sample_gaussian(texcoord, sample_width, luma_res);
+	float3 color = sample_gaussian(texcoord, sample_width / vhs_res_luma_mult, luma_res);
 	return 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
 }
 

@@ -29,15 +29,30 @@ uniform float vhs_output_gamma <
 	ui_tooltip = "Most monitors/images use a value of 2.2";
 > = 2.2;
 
-#define source_res float2(640, 480)
-#define color_res float2(40, 448)
-#define luma_res float2(333, 448)
+uniform float vhs_res_color_mult <
+	ui_type = "slider";
+	ui_min = 0.01; ui_max = 3.00;
+	ui_step = 0.05;
+	ui_label = "Image chroma resolution multiplier";
+	ui_tooltip = "Use 0.5x for longplay, or 0.25 for super longplay";
+> = 1.0;
+
+uniform float vhs_res_luma_mult <
+	ui_type = "slider";
+	ui_min = 0.01; ui_max = 3.00;
+	ui_step = 0.05;
+	ui_label = "Image luma resolution multiplier";
+	ui_tooltip = "Use 0.5x for longplay, or 0.25 for super longplay";
+> = 1.0;
+
+#define vhs_color_res float2(40, 448)
+#define vhs_luma_res float2(333, 448)
 
 #ifndef vhs_lerp_sample_count
 	#define vhs_lerp_sample_count 2
 #endif
 
-texture texVHSColor_Lerp		{ Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT; Format = RGBA16F; };
+texture texVHSColor_Lerp		{ Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT; Format = RG16F; };
 texture texVHSLuma_Lerp		{ Width = BUFFER_WIDTH; Height = BUFFER_HEIGHT; Format = R16F; };
 sampler texVHSColorSampler_Lerp { Texture = texVHSColor_Lerp; };
 sampler texVHSLumaSampler_Lerp { Texture = texVHSLuma_Lerp; };
@@ -72,16 +87,16 @@ float3 Sample_Color_Downsize_offset(float2 texcoord, float2 sample_resolution, f
 	float2 sub_coord10 = sub_coord00 + float2(pixel_size.x, 0);	// +x
 	float2 sub_coord01 = sub_coord00 + float2(0, pixel_size.y);	// +y
 	float2 sub_coord11 = sub_coord00 + pixel_size.xy;			// +xy
-	float2 delta_sub_coord = abs(texcoord - sub_coord00)/(sub_coord11 - sub_coord00);
+	float2 vector_sub_coord = abs(texcoord - sub_coord00)/(sub_coord11 - sub_coord00);
 
 	float3 color00 = tex2D(ReShade::BackBuffer, sub_coord00 + pixel_sample_offset ).rgb;
 	float3 color10 = tex2D(ReShade::BackBuffer, sub_coord10 + pixel_sample_offset ).rgb;
 	float3 color01 = tex2D(ReShade::BackBuffer, sub_coord01 + pixel_sample_offset ).rgb;
 	float3 color11 = tex2D(ReShade::BackBuffer, sub_coord11 + pixel_sample_offset ).rgb;
 
-	float3 color_y0 = lerp(color00, color10, delta_sub_coord.x);
-	float3 color_y1 = lerp(color01, color11, delta_sub_coord.x);
-	float3 color = lerp(color_y0, color_y1, delta_sub_coord.y);
+	float3 color_y0 = lerp(color00, color10, vector_sub_coord.x);
+	float3 color_y1 = lerp(color01, color11, vector_sub_coord.x);
+	float3 color = lerp(color_y0, color_y1, vector_sub_coord.y);
 
 	return color;
 }
@@ -104,36 +119,33 @@ float3 Sample_Color_Downsize(float2 texcoord, float2 sample_resolution)
 
 	color /= 1 + ((vhs_lerp_sample_count - 1) * 3);
 
+	color = pow(color, vhs_input_gamma);
 	return saturate(color);
 }
 
 
-float4 VHS_Dee_Liteyears_Color_Lerp(float4 pos : SV_Position, float2 texcoord : TexCoord ) : COLOR
+float2 VHS_Dee_Liteyears_Color_Lerp(float4 pos : SV_Position, float2 texcoord : TexCoord ) : COLOR
 {
-	float3 color = Sample_Color_Downsize(texcoord, color_res);
-	return float4(pow(color, vhs_input_gamma), 1.0);
-	// return float4(color, 1.0);
+	float3 color = Sample_Color_Downsize(texcoord, vhs_color_res * vhs_res_color_mult);
+	return rgb2hs(color.rgb); // Convert color to hue/saturation
 }
 
 float VHS_Dee_Liteyears_Luma_Lerp(float4 pos : SV_Position, float2 texcoord : TexCoord ) : COLOR
 {
-	float3 color = Sample_Color_Downsize(texcoord, luma_res);
-	color = pow(color, vhs_input_gamma);
+	float3 color = Sample_Color_Downsize(texcoord, vhs_luma_res * vhs_res_luma_mult);
 	return 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
 }
 
 float3 VHS_Dee_Liteyears_Blend_Lerp(float4 pos : SV_Position, float2 texcoord : TexCoord ) : COLOR
 {
 	float alpha = tex2D(ReShade::BackBuffer, texcoord ).a;
-	float3 color = tex2D(texVHSColorSampler_Lerp, texcoord ).rgb;
+	float2 hs = tex2D(texVHSColorSampler_Lerp, texcoord ).rg;
 	float luma = tex2D(texVHSLumaSampler_Lerp, texcoord );
-	// return float4(color, 1);
 
-	float2 hs = rgb2hs(color.rgb);	// Convert color to hue/saturation
-	hs.y = saturate(hs.y * vhs_output_saturation);
+	hs.y = saturate(hs.y * vhs_output_saturation);	// Saturation adjustment
 
 	// Blend image channels
-	color = hsv2rgb(float3(hs.x, hs.y, luma));
+	float3 color = hsv2rgb(float3(hs.x, hs.y, luma));
 	color.rgb *= vhs_output_exposure;	// Exposure adjustment
 	color.rgb = pow(color.rgb, 1/vhs_output_gamma);	// Gamma adjustment
 	return saturate(float4(color.rgb, alpha));
